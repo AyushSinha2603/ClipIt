@@ -1,8 +1,9 @@
-let screenshotDataUrl = null; // Store captured screenshot string
+// State management
+let activeScreenshots = []; // Array of { id: timestamp, base64: dataUrl }
 
 document.addEventListener('DOMContentLoaded', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  document.getElementById('title').value = tab.title || 'Untitled';
+  document.getElementById('title').value = tab.title || 'Untitled Session';
 
   // Extract highlighted text on active tab
   chrome.scripting.executeScript({
@@ -36,62 +37,168 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('snapBtn').addEventListener('click', () => {
     chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
       if (dataUrl) {
-        screenshotDataUrl = dataUrl;
-        const img = document.getElementById('previewImg');
-        img.src = dataUrl;
-        img.style.display = 'block';
+        // Add to active state array with a unique timestamp ID
+        activeScreenshots.push({
+          id: Date.now(),
+          base64: dataUrl
+        });
+        // Redraw gallery with new screenshot
+        renderGallery();
       }
     });
   });
 
-  document.getElementById('saveBtn').addEventListener('click', () => saveNote(tab.url));
+  document.getElementById('saveBtn').addEventListener('click', () => saveNoteSession(tab.url));
 });
 
-async function saveNote(pageUrl) {
-  const status = document.getElementById('status');
-  status.textContent = 'Committing...';
+// =========================================
+// NEW: Rendering and State Functions
+// =========================================
+
+function renderGallery() {
+  const gallery = document.getElementById('screenshotGallery');
   
+  // Clear existing items
+  gallery.innerHTML = '';
+
+  if (activeScreenshots.length === 0) {
+    gallery.style.display = 'none'; // Hide when empty
+    return;
+  }
+
+  gallery.style.display = 'flex'; // Show gallery
+
+  activeScreenshots.forEach((item, index) => {
+    // 1. Container
+    const itemDiv = document.createElement('div');
+    itemDiv.className = 'gallery-item';
+
+    // 2. Image Thumbnail
+    const img = document.createElement('img');
+    img.src = item.base64;
+    img.alt = `Screenshot thumbnail ${index + 1}`;
+    img.className = 'screenshot-thumbnail';
+
+    // 3. Delete 'X' icon
+    const deleteIcon = document.createElement('span');
+    deleteIcon.innerHTML = '&#10005;'; // HTML code for X
+    deleteIcon.className = 'delete-icon';
+    deleteIcon.title = 'Delete screenshot from session';
+    
+    // Deletion Logic
+    deleteIcon.addEventListener('click', () => deleteScreenshot(item.id));
+
+    // Combine and append
+    itemDiv.appendChild(img);
+    itemDiv.appendChild(deleteIcon);
+    gallery.appendChild(itemDiv);
+  });
+}
+
+function deleteScreenshot(idToDelete) {
+  // Filter the state array based on timestamp ID
+  activeScreenshots = activeScreenshots.filter(item => item.id !== idToDelete);
+  // Redraw gallery without the deleted item
+  renderGallery();
+}
+
+// =========================================
+// Modified: Batch Upload and Construct Logic
+// =========================================
+
+async function saveNoteSession(pageUrl) {
+  const status = document.getElementById('status');
+  status.className = 'status';
+  status.textContent = 'Committing Session...';
+  
+  const saveBtn = document.getElementById('saveBtn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Uploading...';
+
   const { githubToken, repoOwner, repoName, folderPath } = await chrome.storage.local.get(['githubToken', 'repoOwner', 'repoName', 'folderPath']);
-  if (!githubToken) return status.textContent = 'Configure options first!';
+  
+  if (!githubToken) {
+    status.className = 'status error';
+    status.textContent = 'Configure options first!';
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Commit Session to GitHub';
+    return;
+  }
 
   const title = document.getElementById('title').value.trim();
   const tags = document.getElementById('tags').value.trim().split(',').filter(t => t).map(t => `"${t.trim()}"`).join(', ');
   let content = document.getElementById('content').value;
   
-  const safeTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '-');
   const dateStr = new Date().toISOString().split('T')[0];
-  const imageFilename = `${dateStr}-${safeTitle}-screen.png`;
+  const safeTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
 
-  // 1. Upload screenshot image if available
-  if (screenshotDataUrl) {
-    status.textContent = 'Uploading screenshot...';
-    // Remove the data URL header (data:image/png;base64,)
-    const base64Image = screenshotDataUrl.replace(/^data:image\/png;base64,/, "");
-    const imgPath = folderPath ? `${folderPath}/images/${imageFilename}` : `images/${imageFilename}`;
+  // status tracking
+  let markdownImageLinks = '\n\n### Session Screenshots\n\n';
+  const totalScreenshots = activeScreenshots.length;
+  let hasScreenshots = totalScreenshots > 0;
+
+  // 1. Process and upload all images using Promise.all()
+  if (hasScreenshots) {
+    status.textContent = `Uploading ${totalScreenshots} screenshots...`;
+    
+    // Create an array of Promises for each parallel image upload
+    const uploadPromises = activeScreenshots.map(async (item, index) => {
+      
+      const imageFilename = `${dateStr}-${safeTitle}-screen-${index + 1}.png`;
+      
+      // Sanitization: Remove the data URL header (data:image/png;base64,) required for GitHub commit content
+      const base64Image = item.base64.replace(/^data:image\/png;base64,/, "");
+      const imgPath = folderPath ? `${folderPath}/images/${imageFilename}` : `images/${imageFilename}`;
+
+      try {
+        const imgResponse = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${imgPath}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${githubToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            message: `upload session screenshot ${index + 1}/${totalScreenshots}: ${imageFilename}`,
+            content: base64Image
+          })
+        });
+
+        if (!imgResponse.ok) {
+          throw new Error(`GitHub image API error ${imgResponse.status}`);
+        }
+
+        // Return the Markdown image tag to append to the final note
+        // Using images/ subfolder organizes the repo neatly
+        const imageRelPath = `images/${imageFilename}`;
+        return `![Screenshot ${index + 1}](${imageRelPath})\n\n`;
+
+      } catch (err) {
+        console.error('Failed to upload session image', err);
+        throw err; // Ensure Promise.all fails if one image fails
+      }
+    });
 
     try {
-      await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${imgPath}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${githubToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          message: `upload screenshot ${imageFilename}`,
-          content: base64Image
-        })
-      });
-
-      // Insert markdown image tag into the content
-      const imageRelPath = `images/${imageFilename}`;
-      content += `\n\n![Screenshot](${imageRelPath})\n`;
+      // Execute all image uploads in parallel and wait for all to succeed
+      const results = await Promise.all(uploadPromises);
+      markdownImageLinks += results.join(''); // combine image tags
     } catch (err) {
-      console.error('Failed to upload image', err);
+      status.className = 'status error';
+      status.textContent = `Error uploading screenshots: ${err.message}`;
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Commit Session to GitHub';
+      return; // Stop execution if images fail
     }
   }
 
-  // 2. Upload Markdown Note
-  status.textContent = 'Saving note...';
+  // 2. Construct and upload final Markdown Note
+  status.textContent = 'Saving session note...';
+  
+  // Append image references to body if they exist
+  if (hasScreenshots) {
+    content += markdownImageLinks;
+  }
+
   const md = `---\ntitle: "${title}"\nurl: "${pageUrl}"\ndate: "${new Date().toISOString()}"\ntags: [${tags}]\n---\n\n# ${title}\n\n**Source:** ${pageUrl}\n\n${content}`;
   
   const noteFilename = `${dateStr}-${safeTitle}.md`;
@@ -105,16 +212,23 @@ async function saveNote(pageUrl) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        message: `add ${noteFilename}`,
+        message: `add session note ${noteFilename} with ${totalScreenshots} screenshots`,
         content: btoa(unescape(encodeURIComponent(md)))
       })
     });
     
     if (res.ok) {
-      status.textContent = 'Success!';
+      status.className = 'status success';
+      status.textContent = 'Session committed successfully!';
       setTimeout(() => window.close(), 1000);
-    } else throw new Error();
-  } catch {
-    status.textContent = 'Error committing file.';
+    } else {
+      const errData = await res.json();
+      throw new Error(errData.message || `GitHub Note API error ${res.status}`);
+    }
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = `Error committing note file: ${err.message}`;
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Commit Session to GitHub';
   }
 }
