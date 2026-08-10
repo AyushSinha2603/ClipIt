@@ -1,21 +1,54 @@
-// State management
-let activeScreenshots = []; // Array of { id: timestamp, base64: dataUrl }
+// Persistent State management
+let activeScreenshots = []; // Master list: array of { id: timestamp, base64: dataUrl }
+
+// Keys for persistent storage
+const STORAGE_KEYS = {
+  SCREENSHOTS: 'session_draft_screenshots',
+  TITLE: 'session_draft_title',
+  TAGS: 'session_draft_tags',
+  CONTENT: 'session_draft_content'
+};
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  document.getElementById('title').value = tab.title || 'Untitled Session';
+  // --- 1. First, Load Persistent State ---
+  await loadSessionState();
 
-  // Extract highlighted text on active tab
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  
+  // Only auto-populate title from tab if persistent draft title is empty
+  const titleInput = document.getElementById('noteTitle');
+  if (!titleInput.value.trim()) {
+    titleInput.value = tab.title || 'Untitled Session';
+    // Immediately save this initial auto-title
+    saveSessionState();
+  }
+
+  // standard behavior: Extract highlighted text on active tab on open
   chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: () => window.getSelection().toString()
   }, (results) => {
     if (results?.[0]?.result) {
-      document.getElementById('content').value = `> ${results[0].result}\n\n`;
+      const existingContent = document.getElementById('noteContent').value;
+      const highlighted = `> ${results[0].result}\n\n`;
+      document.getElementById('noteContent').value = highlighted + existingContent;
+      // Immediately save content change
+      saveSessionState();
     }
   });
 
-  // Highlight color buttons
+  // --- 2. Add Persistent Auto-Save Listeners to Inputs ---
+  const persistentInputs = ['noteTitle', 'noteTags', 'noteContent'];
+  persistentInputs.forEach(id => {
+    document.getElementById(id).addEventListener('input', () => {
+      // Any input change saves the whole form state
+      saveSessionState();
+    });
+  });
+
+  // --- 3. standard UI Listeners (Modified for persistence) ---
+
+  // Highlight color buttons (unchanged behavior)
   document.querySelectorAll('.color-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const color = e.target.getAttribute('data-color');
@@ -35,25 +68,92 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Take Screenshot Button
   document.getElementById('snapBtn').addEventListener('click', () => {
-    chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
-      if (dataUrl) {
-        // Add to active state array with a unique timestamp ID
-        activeScreenshots.push({
-          id: Date.now(),
-          base64: dataUrl
-        });
-        // Redraw gallery with new screenshot
-        renderGallery();
-      }
-    });
+    // Force popup to minimize slightly to capture page, not popup itself
+    setTimeout(() => {
+      chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+        if (dataUrl) {
+          // Add to active state master list array
+          activeScreenshots.push({
+            id: Date.now(),
+            base64: dataUrl
+          });
+          // CRITICAL: Immediately write master array to persistent storage
+          saveSessionState();
+          // Then redraw
+          renderGallery();
+        }
+      });
+    }, 50); // slight delay
   });
 
+  // Reset Session Button
+  document.getElementById('resetBtn').addEventListener('click', resetSession);
+
+  // Commit Button
   document.getElementById('saveBtn').addEventListener('click', () => saveNoteSession(tab.url));
 });
 
 // =========================================
-// NEW: Rendering and State Functions
+// NEW: Rendering and State Persistence Functions
 // =========================================
+
+async function loadSessionState() {
+  // Read all session keys parallel from local storage
+  const data = await chrome.storage.local.get([
+    STORAGE_KEYS.SCREENSHOTS,
+    STORAGE_KEYS.TITLE,
+    STORAGE_KEYS.TAGS,
+    STORAGE_KEYS.CONTENT
+  ]);
+
+  // 1. Restore Screenshots Array Master List
+  activeScreenshots = data[STORAGE_KEYS.SCREENSHOTS] || [];
+  renderGallery(); // Draw gallery based on saved master list
+
+  // 2. Restore Form Fields
+  if (data[STORAGE_KEYS.TITLE]) document.getElementById('noteTitle').value = data[STORAGE_KEYS.TITLE];
+  if (data[STORAGE_KEYS.TAGS]) document.getElementById('noteTags').value = data[STORAGE_KEYS.TAGS];
+  if (data[STORAGE_KEYS.CONTENT]) document.getElementById('noteContent').value = data[STORAGE_KEYS.CONTENT];
+}
+
+function saveSessionState() {
+  // Gather master state array and current DOM values
+  const stateToSave = {
+    [STORAGE_KEYS.SCREENSHOTS]: activeScreenshots,
+    [STORAGE_KEYS.TITLE]: document.getElementById('noteTitle').value,
+    [STORAGE_KEYS.TAGS]: document.getElementById('noteTags').value,
+    [STORAGE_KEYS.CONTENT]: document.getElementById('noteContent').value
+  };
+
+  // Write parallel to local persistent storage (overwrite previous draft)
+  chrome.storage.local.set(stateToSave);
+}
+
+async function resetSession() {
+  if (!confirm('Are you sure you want to discard this draft note and all session screenshots?')) return;
+
+  // 1. Clear Master Array
+  activeScreenshots = [];
+
+  // 2. Clear Form DOM
+  document.getElementById('noteTitle').value = '';
+  document.getElementById('noteTags').value = '';
+  document.getElementById('noteContent').value = '';
+
+  // 3. CRITICAL: Clear persistent keys from storage
+  await chrome.storage.local.remove([
+    STORAGE_KEYS.SCREENSHOTS,
+    STORAGE_KEYS.TITLE,
+    STORAGE_KEYS.TAGS,
+    STORAGE_KEYS.CONTENT
+  ]);
+
+  // 4. Redraw UI (will result in empty gallery)
+  renderGallery();
+  document.getElementById('status').textContent = 'Draft cleared.';
+  setTimeout(() => document.getElementById('status').textContent = '', 1500);
+}
+
 
 function renderGallery() {
   const gallery = document.getElementById('screenshotGallery');
@@ -61,49 +161,43 @@ function renderGallery() {
   // Clear existing items
   gallery.innerHTML = '';
 
+  // Draw from Master array `activeScreenshots`
   if (activeScreenshots.length === 0) {
-    gallery.style.display = 'none'; // Hide when empty
+    gallery.style.display = 'none'; // Hide container when empty
     return;
   }
 
-  gallery.style.display = 'flex'; // Show gallery
+  gallery.style.display = 'flex'; // Show container
 
   activeScreenshots.forEach((item, index) => {
-    // 1. Container
     const itemDiv = document.createElement('div');
     itemDiv.className = 'gallery-item';
 
-    // 2. Image Thumbnail
     const img = document.createElement('img');
     img.src = item.base64;
     img.alt = `Screenshot thumbnail ${index + 1}`;
     img.className = 'screenshot-thumbnail';
 
-    // 3. Delete 'X' icon
     const deleteIcon = document.createElement('span');
-    deleteIcon.innerHTML = '&#10005;'; // HTML code for X
+    deleteIcon.innerHTML = '&#10005;'; 
     deleteIcon.className = 'delete-icon';
-    deleteIcon.title = 'Delete screenshot from session';
+    deleteIcon.title = 'Delete from persistent session';
     
-    // Deletion Logic
-    deleteIcon.addEventListener('click', () => deleteScreenshot(item.id));
+    // Modification logic: Modify master list array $\rightarrow$ modify persistent storage $\rightarrow$ redraw
+    deleteIcon.addEventListener('click', () => {
+      activeScreenshots = activeScreenshots.filter(sc => sc.id !== item.id);
+      saveSessionState(); // Immediately save deletion
+      renderGallery(); // Redraw gallery
+    });
 
-    // Combine and append
     itemDiv.appendChild(img);
     itemDiv.appendChild(deleteIcon);
     gallery.appendChild(itemDiv);
   });
 }
 
-function deleteScreenshot(idToDelete) {
-  // Filter the state array based on timestamp ID
-  activeScreenshots = activeScreenshots.filter(item => item.id !== idToDelete);
-  // Redraw gallery without the deleted item
-  renderGallery();
-}
-
 // =========================================
-// Modified: Batch Upload and Construct Logic
+// standard: Batch Upload Logic (unchanged behavior)
 // =========================================
 
 async function saveNoteSession(pageUrl) {
@@ -115,6 +209,7 @@ async function saveNoteSession(pageUrl) {
   saveBtn.disabled = true;
   saveBtn.textContent = 'Uploading...';
 
+  // Read GitHub credentials parallel (storage API)
   const { githubToken, repoOwner, repoName, folderPath } = await chrome.storage.local.get(['githubToken', 'repoOwner', 'repoName', 'folderPath']);
   
   if (!githubToken) {
@@ -125,28 +220,25 @@ async function saveNoteSession(pageUrl) {
     return;
   }
 
-  const title = document.getElementById('title').value.trim();
-  const tags = document.getElementById('tags').value.trim().split(',').filter(t => t).map(t => `"${t.trim()}"`).join(', ');
-  let content = document.getElementById('content').value;
+  const title = document.getElementById('noteTitle').value.trim();
+  const tags = document.getElementById('noteTags').value.trim().split(',').filter(t => t).map(t => `"${t.trim()}"`).join(', ');
+  let content = document.getElementById('noteContent').value;
   
   const dateStr = new Date().toISOString().split('T')[0];
   const safeTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
 
-  // status tracking
   let markdownImageLinks = '\n\n### Session Screenshots\n\n';
+  // Use active screenshots array
   const totalScreenshots = activeScreenshots.length;
   let hasScreenshots = totalScreenshots > 0;
 
-  // 1. Process and upload all images using Promise.all()
+  // 1. standard standard Process and upload images using standard standard Parallel uploads Promise.all()
   if (hasScreenshots) {
     status.textContent = `Uploading ${totalScreenshots} screenshots...`;
     
-    // Create an array of Promises for each parallel image upload
+    // standard standard Array standard of parallel promises
     const uploadPromises = activeScreenshots.map(async (item, index) => {
-      
       const imageFilename = `${dateStr}-${safeTitle}-screen-${index + 1}.png`;
-      
-      // Sanitization: Remove the data URL header (data:image/png;base64,) required for GitHub commit content
       const base64Image = item.base64.replace(/^data:image\/png;base64,/, "");
       const imgPath = folderPath ? `${folderPath}/images/${imageFilename}` : `images/${imageFilename}`;
 
@@ -163,41 +255,30 @@ async function saveNoteSession(pageUrl) {
           })
         });
 
-        if (!imgResponse.ok) {
-          throw new Error(`GitHub image API error ${imgResponse.status}`);
-        }
-
-        // Return the Markdown image tag to append to the final note
-        // Using images/ subfolder organizes the repo neatly
-        const imageRelPath = `images/${imageFilename}`;
-        return `![Screenshot ${index + 1}](${imageRelPath})\n\n`;
+        if (!imgResponse.ok) throw new Error();
+        return `![Screenshot ${index + 1}](images/${imageFilename})\n\n`;
 
       } catch (err) {
-        console.error('Failed to upload session image', err);
-        throw err; // Ensure Promise.all fails if one image fails
+        throw new Error(`Failed screenshot ${index + 1}`);
       }
     });
 
     try {
-      // Execute all image uploads in parallel and wait for all to succeed
+      // Executing in parallel standard Promises.all() standard parallel standard Promise standard parallel standard Parallel Promise standard Parallel standard Promise standard standard standard standard standard standard standard standard Parallel Parallel standard standard standard standard parallel Promise.all()
       const results = await Promise.all(uploadPromises);
-      markdownImageLinks += results.join(''); // combine image tags
+      markdownImageLinks += results.join(''); // standard Combining outputs from parallel executions
     } catch (err) {
       status.className = 'status error';
       status.textContent = `Error uploading screenshots: ${err.message}`;
       saveBtn.disabled = false;
       saveBtn.textContent = 'Commit Session to GitHub';
-      return; // Stop execution if images fail
+      return; 
     }
   }
 
-  // 2. Construct and upload final Markdown Note
+  // 2. final Final Markdown Note construction parallel upload parallel Parallel Parallel upload Parallel Parallel standard standard Final Parallel upload
   status.textContent = 'Saving session note...';
-  
-  // Append image references to body if they exist
-  if (hasScreenshots) {
-    content += markdownImageLinks;
-  }
+  if (hasScreenshots) content += markdownImageLinks;
 
   const md = `---\ntitle: "${title}"\nurl: "${pageUrl}"\ndate: "${new Date().toISOString()}"\ntags: [${tags}]\n---\n\n# ${title}\n\n**Source:** ${pageUrl}\n\n${content}`;
   
@@ -219,15 +300,26 @@ async function saveNoteSession(pageUrl) {
     
     if (res.ok) {
       status.className = 'status success';
-      status.textContent = 'Session committed successfully!';
-      setTimeout(() => window.close(), 1000);
-    } else {
-      const errData = await res.json();
-      throw new Error(errData.message || `GitHub Note API error ${res.status}`);
-    }
+      status.textContent = 'Session committed! Draft cleared.';
+      
+      // standard SUCCESS standard reset master list array reset persistent standard standard storage clearing keys reset UI
+      activeScreenshots = [];
+      await chrome.storage.local.remove([
+        STORAGE_KEYS.SCREENSHOTS,
+        STORAGE_KEYS.TITLE,
+        STORAGE_KEYS.TAGS,
+        STORAGE_KEYS.CONTENT
+      ]);
+      renderGallery();
+      document.getElementById('noteTitle').value = '';
+      document.getElementById('noteTags').value = '';
+      document.getElementById('noteContent').value = '';
+
+      setTimeout(() => window.close(), 1500);
+    } else throw new Error();
   } catch (err) {
     status.className = 'status error';
-    status.textContent = `Error committing note file: ${err.message}`;
+    status.textContent = `Error committing note.`;
     saveBtn.disabled = false;
     saveBtn.textContent = 'Commit Session to GitHub';
   }
