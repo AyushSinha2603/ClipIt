@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: sans-serif; padding: 12px; width: 320px; margin: 0; }
+    input, textarea { width: 100%; box-sizing: border-box; margin: 4px 0 10px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; }
+    textarea { height: 100px; resize: vertical; }
+    button { background: #0969da; color: white; border: none; padding: 8px; width: 100%; border-radius: 4px; cursor: pointer; }
+    .status { margin-top: 8px; font-size: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <input type="text" id="title" placeholder="Title" />
+  <input type="text" id="tags" placeholder="Tags (comma separated)" />
+  <textarea id="content" placeholder="Content..."></textarea>
+  <button id="saveBtn">Commit to GitHub</button>
+  <div id="status" class="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

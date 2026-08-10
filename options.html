@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: sans-serif; padding: 20px; width: 320px; }
+    .field { margin-bottom: 12px; }
+    label { display: block; font-weight: bold; margin-bottom: 4px; font-size: 13px; }
+    input { width: 100%; padding: 6px; box-sizing: border-box; }
+    button { background: #2ea44f; color: white; border: none; padding: 8px; width: 100%; border-radius: 4px; cursor: pointer; }
+    #status { margin-top: 10px; font-size: 12px; color: green; }
+  </style>
+</head>
+<body>
+  <div class="field"><label>GitHub Token</label><input type="password" id="token" /></div>
+  <div class="field"><label>GitHub Username</label><input type="text" id="owner" /></div>
+  <div class="field"><label>Repository Name</label><input type="text" id="repo" value="clipit" /></div>
+  <div class="field"><label>Folder</label><input type="text" id="folder" value="notes" /></div>
+  <button id="save">Save</button>
+  <p id="status"></p>
+  <script src="options.js"></script>
+</body>
+</html>
