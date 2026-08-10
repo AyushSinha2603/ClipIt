@@ -2,20 +2,78 @@
 <html>
 <head>
   <style>
-    body { font-family: sans-serif; padding: 20px; width: 320px; }
-    .field { margin-bottom: 12px; }
-    label { display: block; font-weight: bold; margin-bottom: 4px; font-size: 13px; }
-    input { width: 100%; padding: 6px; box-sizing: border-box; }
-    button { background: #2ea44f; color: white; border: none; padding: 8px; width: 100%; border-radius: 4px; cursor: pointer; }
-    #status { margin-top: 10px; font-size: 12px; color: green; }
+    /* Base Body Styling (Dark mode match) */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      padding: 24px;
+      width: 340px;
+      background-color: #1a1a1a;
+      color: #eee;
+      margin: 0;
+    }
+    h3 { margin-top: 0; margin-bottom: 20px; text-align: center; color: #eee; }
+
+    /* Forms */
+    .field { margin-bottom: 16px; }
+    label { display: block; font-weight: bold; margin-bottom: 6px; font-size: 13px; color: #aaa; }
+
+    /* Inputs (Dark input style) */
+    input {
+      width: 100%;
+      padding: 10px;
+      box-sizing: border-box;
+      font-family: inherit;
+      font-size: 14px;
+      background-color: #2b2b2b;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 6px;
+      transition: border-color 0.1s;
+    }
+    input:focus {
+      border-color: #2ea44f;
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(46, 164, 79, 0.3);
+    }
+    input::placeholder { color: #888; }
+
+    /* 3. Buttons (Primary Commit Blue on main popup, distinct commit green here on options) */
+    #save {
+      background: #2ea44f;
+      color: white;
+      border: none;
+      padding: 12px;
+      cursor: pointer;
+      width: 100%;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 14px;
+      transition: background-color 0.1s;
+    }
+    #save:hover { background: #34bc5a; }
+    #save:active { background: #2a9244; }
+
+    /* 4. Status message */
+    #status {
+      margin-top: 15px;
+      font-size: 13px;
+      text-align: center;
+      /* Status is now light by default */
+      color: #aaa;
+    }
+    /* Specific success status for Options page, needs to be more visible on dark */
+    #status.success {
+      color: #6bc47d;
+    }
   </style>
 </head>
 <body>
-  <div class="field"><label>GitHub Token</label><input type="password" id="token" /></div>
-  <div class="field"><label>GitHub Username</label><input type="text" id="owner" /></div>
-  <div class="field"><label>Repository Name</label><input type="text" id="repo" value="clipit" /></div>
-  <div class="field"><label>Folder</label><input type="text" id="folder" value="notes" /></div>
-  <button id="save">Save</button>
+  <h3>ClipIt Notes Options</h3>
+  <div class="field"><label for="token">GitHub Token (PAT)</label><input type="password" id="token" placeholder="ghp_xxxx..." /></div>
+  <div class="field"><label for="owner">GitHub Username</label><input type="text" id="owner" placeholder="username" /></div>
+  <div class="field"><label for="repo">Repository Name</label><input type="text" id="repo" value="clipit" /></div>
+  <div class="field"><label for="folder">Folder In Repo</label><input type="text" id="folder" value="notes" /></div>
+  <button id="save">Save Settings</button>
   <p id="status"></p>
   <script src="options.js"></script>
 </body>

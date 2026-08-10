@@ -2,16 +2,153 @@
 <html>
 <head>
   <style>
-    body { font-family: sans-serif; padding: 12px; width: 320px; margin: 0; }
-    input, textarea { width: 100%; box-sizing: border-box; margin: 4px 0 10px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; }
-    textarea { height: 90px; resize: vertical; }
-    button { background: #0969da; color: white; border: none; padding: 8px; width: 100%; border-radius: 4px; cursor: pointer; font-weight: bold; }
-    .secondary-btn { background: #24292f; margin-bottom: 10px; }
-    .status { margin-top: 8px; font-size: 12px; text-align: center; }
-    .color-row { display: flex; gap: 10px; margin-bottom: 10px; }
-    .color-btn { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 1px solid #999; }
-    label { font-size: 12px; font-weight: bold; }
-    #previewImg { width: 100%; max-height: 120px; object-fit: cover; border-radius: 4px; border: 1px solid #ccc; margin-bottom: 10px; display: none; }
+    /* 1. Base Dark Mode Body Styling */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      padding: 12px;
+      width: 320px;
+      margin: 0;
+      /* Define dark background */
+      background-color: #1a1a1a;
+      /* Define base light text color */
+      color: #eee;
+    }
+
+    /* Input & Textarea Styling (dark inputs, light text) */
+    input, textarea {
+      width: 100%;
+      box-sizing: border-box;
+      margin: 4px 0 10px;
+      padding: 8px;
+      font-family: inherit;
+      font-size: 13px;
+      /* Dark input background */
+      background-color: #2b2b2b;
+      /* Light input text */
+      color: #eee;
+      /* Subtle border */
+      border: 1px solid #444;
+      border-radius: 4px;
+      transition: border-color 0.1s;
+    }
+    input:focus, textarea:focus {
+      border-color: #0969da;
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.3);
+    }
+    /* Input Placeholders */
+    input::placeholder, textarea::placeholder {
+      color: #888;
+    }
+
+    textarea {
+      height: 90px;
+      resize: vertical;
+    }
+
+    /* Labels */
+    label {
+      font-size: 12px;
+      font-weight: bold;
+      /* Subtly darker light for labels */
+      color: #aaa;
+    }
+
+    /* 2. Color buttons row (Highlight On Page) */
+    .color-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+      justify-content: start;
+      padding-left: 2px;
+    }
+    .color-btn {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid #ccc;
+      transition: transform 0.1s;
+    }
+    .color-btn:hover {
+      transform: scale(1.1);
+      border-color: #eee;
+    }
+    /* Add explicit shadows to buttons so they stand out */
+    .color-btn[data-color="#fff59d"] { box-shadow: 0 0 10px rgba(255, 245, 157, 0.4); }
+    .color-btn[data-color="#a5d6a7"] { box-shadow: 0 0 10px rgba(165, 214, 167, 0.4); }
+    .color-btn[data-color="#90caf9"] { box-shadow: 0 0 10px rgba(144, 202, 249, 0.4); }
+    .color-btn[data-color="#f48fb1"] { box-shadow: 0 0 10px rgba(244, 143, 177, 0.4); }
+
+    /* 3. Button Styling (Primary Commit Blue, Secondary Grey) */
+    button {
+      border: none;
+      width: 100%;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background-color 0.1s;
+    }
+
+    /* Commit Button (Blue) */
+    #saveBtn {
+      background: #0969da;
+      color: white;
+      padding: 10px;
+      font-size: 14px;
+    }
+    #saveBtn:hover {
+      background: #0d7bf9;
+    }
+    #saveBtn:active {
+      background: #085cc0;
+    }
+    /* Disabled behavior when saving */
+    #saveBtn:disabled {
+      background: #3e4a5d;
+      cursor: wait;
+    }
+
+    /* Screenshot Button (Dark Grey, cohesive match) */
+    #snapBtn {
+      background: #24292f;
+      color: white;
+      padding: 10px;
+      font-size: 13px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    #snapBtn:hover {
+      background: #32383f;
+    }
+
+    /* 4. Preview Image Box */
+    #previewImg {
+      width: 100%;
+      max-height: 120px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid #444;
+      margin-bottom: 12px;
+      display: none;
+    }
+
+    /* 5. Status message */
+    .status {
+      margin-top: 10px;
+      font-size: 12px;
+      text-align: center;
+      /* Status is now light by default */
+      color: #aaa;
+    }
+    /* Specific success status for popups, more legible on dark */
+    .status.success {
+      color: #6bc47d;
+    }
+
   </style>
 </head>
 <body>
@@ -23,10 +160,11 @@
     <div class="color-btn" data-color="#f48fb1" style="background: #f48fb1;"></div>
   </div>
 
-  <button id="snapBtn" class="secondary-btn">📸 Take Screenshot</button>
+  <!-- FIXED: Broken emoji replaced with a cohesive icon and text -->
+  <button id="snapBtn"><span style="font-size: 1.2em;">📸</span> Take Screenshot</button>
   <img id="previewImg" alt="Screenshot preview" />
 
-  <input type="text" id="title" placeholder="Title" />
+  <input type="text" id="title" placeholder="Note Title" />
   <input type="text" id="tags" placeholder="Tags (comma separated)" />
   <textarea id="content" placeholder="Content..."></textarea>
   <button id="saveBtn">Commit to GitHub</button>
