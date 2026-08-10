@@ -7,14 +7,26 @@
     textarea { height: 100px; resize: vertical; }
     button { background: #0969da; color: white; border: none; padding: 8px; width: 100%; border-radius: 4px; cursor: pointer; }
     .status { margin-top: 8px; font-size: 12px; text-align: center; }
+    .color-row { display: flex; gap: 10px; margin-bottom: 12px; }
+    .color-btn { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 1px solid #999; }
+    label { font-size: 12px; font-weight: bold; }
   </style>
 </head>
 <body>
+  <label>Highlight on Page</label>
+  <div class="color-row">
+    <div class="color-btn" data-color="#fff59d" style="background: #fff59d;"></div>
+    <div class="color-btn" data-color="#a5d6a7" style="background: #a5d6a7;"></div>
+    <div class="color-btn" data-color="#90caf9" style="background: #90caf9;"></div>
+    <div class="color-btn" data-color="#f48fb1" style="background: #f48fb1;"></div>
+  </div>
+
   <input type="text" id="title" placeholder="Title" />
   <input type="text" id="tags" placeholder="Tags (comma separated)" />
   <textarea id="content" placeholder="Content..."></textarea>
   <button id="saveBtn">Commit to GitHub</button>
   <div id="status" class="status"></div>
+  
   <script src="popup.js"></script>
 </body>
 </html>

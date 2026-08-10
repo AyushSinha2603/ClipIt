@@ -11,6 +11,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  document.querySelectorAll('.color-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const color = e.target.getAttribute('data-color');
+      
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        args: [color],
+        func: (highlightColor) => {
+          if (!window.getSelection().isCollapsed) {
+            document.designMode = "on";
+            document.execCommand("hiliteColor", false, highlightColor);
+            document.designMode = "off";
+          }
+        }
+      });
+    });
+  });
+
   document.getElementById('saveBtn').addEventListener('click', () => saveNote(tab.url));
 });
 
