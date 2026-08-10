@@ -1,14 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <style>
-    /* 1. Base Dark Mode Body Styling */
+    /* Base Body Styling (Dark mode match) */
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       padding: 12px;
       width: 320px;
       margin: 0;
-      /* Define dark background */
+      /* Background matches common dark IDEs/OS themes */
       background-color: #1a1a1a;
       /* Define base light text color */
       color: #eee;
@@ -54,7 +55,7 @@
       color: #aaa;
     }
 
-    /* 2. Color buttons row (Highlight On Page) */
+    /* Highlight On Page buttons row */
     .color-row {
       display: flex;
       gap: 12px;
@@ -74,13 +75,13 @@
       transform: scale(1.1);
       border-color: #eee;
     }
-    /* Add explicit shadows to buttons so they stand out */
+    /* Glow effect for colors on dark background */
     .color-btn[data-color="#fff59d"] { box-shadow: 0 0 10px rgba(255, 245, 157, 0.4); }
     .color-btn[data-color="#a5d6a7"] { box-shadow: 0 0 10px rgba(165, 214, 167, 0.4); }
     .color-btn[data-color="#90caf9"] { box-shadow: 0 0 10px rgba(144, 202, 249, 0.4); }
     .color-btn[data-color="#f48fb1"] { box-shadow: 0 0 10px rgba(244, 143, 177, 0.4); }
 
-    /* 3. Button Styling (Primary Commit Blue, Secondary Grey) */
+    /* Button Styling */
     button {
       border: none;
       width: 100%;
@@ -88,20 +89,31 @@
       cursor: pointer;
       font-weight: bold;
       transition: background-color 0.1s;
+      padding: 10px;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
 
-    /* Commit Button (Blue) */
+    /* Secondary Button (Take Screenshot - Dark Grey) */
+    #snapBtn {
+      background: #24292f;
+      color: white;
+      margin-bottom: 10px;
+    }
+    #snapBtn:hover {
+      background: #32383f;
+    }
+
+    /* Primary Button (Commit Blue) */
     #saveBtn {
       background: #0969da;
       color: white;
-      padding: 10px;
-      font-size: 14px;
     }
     #saveBtn:hover {
       background: #0d7bf9;
-    }
-    #saveBtn:active {
-      background: #085cc0;
     }
     /* Disabled behavior when saving */
     #saveBtn:disabled {
@@ -109,23 +121,7 @@
       cursor: wait;
     }
 
-    /* Screenshot Button (Dark Grey, cohesive match) */
-    #snapBtn {
-      background: #24292f;
-      color: white;
-      padding: 10px;
-      font-size: 13px;
-      margin-bottom: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-    #snapBtn:hover {
-      background: #32383f;
-    }
-
-    /* 4. Preview Image Box */
+    /* Preview Image Box (Hidden by default) */
     #previewImg {
       width: 100%;
       max-height: 120px;
@@ -136,17 +132,18 @@
       display: none;
     }
 
-    /* 5. Status message */
+    /* Status message */
     .status {
       margin-top: 10px;
       font-size: 12px;
       text-align: center;
-      /* Status is now light by default */
       color: #aaa;
     }
-    /* Specific success status for popups, more legible on dark */
     .status.success {
       color: #6bc47d;
+    }
+    .status.error {
+      color: #cf222e;
     }
 
   </style>
@@ -160,16 +157,23 @@
     <div class="color-btn" data-color="#f48fb1" style="background: #f48fb1;"></div>
   </div>
 
-  <!-- FIXED: Broken emoji replaced with a cohesive icon and text -->
-  <button id="snapBtn"><span style="font-size: 1.2em;">📸</span> Take Screenshot</button>
+  <!-- FIXED: Character code &#128247; used for camera icon to prevent encoding errors -->
+  <button id="snapBtn"><span>&#128247;</span> Take Screenshot</button>
   <img id="previewImg" alt="Screenshot preview" />
 
-  <input type="text" id="title" placeholder="Note Title" />
-  <input type="text" id="tags" placeholder="Tags (comma separated)" />
-  <textarea id="content" placeholder="Content..."></textarea>
+  <label for="title">Note Title / Filename</label>
+  <input type="text" id="title" placeholder="Untitled Note" />
+
+  <label for="tags">Tags</label>
+  <input type="text" id="tags" placeholder="comma, separated" />
+
+  <label for="content">Note Content (Markdown)</label>
+  <textarea id="content" placeholder="Type your note or use highlights..."></textarea>
+
   <button id="saveBtn">Commit to GitHub</button>
   <div id="status" class="status"></div>
   
+  <!-- popup.js must exist in the same folder -->
   <script src="popup.js"></script>
 </body>
 </html>
