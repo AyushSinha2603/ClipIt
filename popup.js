@@ -1,7 +1,10 @@
+let screenshotDataUrl = null; // Store captured screenshot string
+
 document.addEventListener('DOMContentLoaded', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   document.getElementById('title').value = tab.title || 'Untitled';
 
+  // Extract highlighted text on active tab
   chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: () => window.getSelection().toString()
@@ -11,10 +14,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // Highlight color buttons
   document.querySelectorAll('.color-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const color = e.target.getAttribute('data-color');
-      
       chrome.scripting.executeScript({
         target: { tabId: tab.id },
         args: [color],
@@ -26,6 +29,18 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
       });
+    });
+  });
+
+  // Take Screenshot Button
+  document.getElementById('snapBtn').addEventListener('click', () => {
+    chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+      if (dataUrl) {
+        screenshotDataUrl = dataUrl;
+        const img = document.getElementById('previewImg');
+        img.src = dataUrl;
+        img.style.display = 'block';
+      }
     });
   });
 
@@ -41,22 +56,56 @@ async function saveNote(pageUrl) {
 
   const title = document.getElementById('title').value.trim();
   const tags = document.getElementById('tags').value.trim().split(',').filter(t => t).map(t => `"${t.trim()}"`).join(', ');
-  const content = document.getElementById('content').value;
+  let content = document.getElementById('content').value;
   
+  const safeTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '-');
+  const dateStr = new Date().toISOString().split('T')[0];
+  const imageFilename = `${dateStr}-${safeTitle}-screen.png`;
+
+  // 1. Upload screenshot image if available
+  if (screenshotDataUrl) {
+    status.textContent = 'Uploading screenshot...';
+    // Remove the data URL header (data:image/png;base64,)
+    const base64Image = screenshotDataUrl.replace(/^data:image\/png;base64,/, "");
+    const imgPath = folderPath ? `${folderPath}/images/${imageFilename}` : `images/${imageFilename}`;
+
+    try {
+      await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${imgPath}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${githubToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: `upload screenshot ${imageFilename}`,
+          content: base64Image
+        })
+      });
+
+      // Insert markdown image tag into the content
+      const imageRelPath = `images/${imageFilename}`;
+      content += `\n\n![Screenshot](${imageRelPath})\n`;
+    } catch (err) {
+      console.error('Failed to upload image', err);
+    }
+  }
+
+  // 2. Upload Markdown Note
+  status.textContent = 'Saving note...';
   const md = `---\ntitle: "${title}"\nurl: "${pageUrl}"\ndate: "${new Date().toISOString()}"\ntags: [${tags}]\n---\n\n# ${title}\n\n**Source:** ${pageUrl}\n\n${content}`;
   
-  const filename = `${new Date().toISOString().split('T')[0]}-${title.toLowerCase().replace(/[^a-z0-9]/g, '-')}.md`;
-  const path = folderPath ? `${folderPath}/${filename}` : filename;
+  const noteFilename = `${dateStr}-${safeTitle}.md`;
+  const notePath = folderPath ? `${folderPath}/${noteFilename}` : noteFilename;
   
   try {
-    const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${path}`, {
+    const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${notePath}`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${githubToken}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        message: `add ${filename}`,
+        message: `add ${noteFilename}`,
         content: btoa(unescape(encodeURIComponent(md)))
       })
     });
