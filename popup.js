@@ -114,21 +114,22 @@ function deleteTimelineItem(idToDelete) {
   renderTimeline();
 }
 
-function takeScreenshot() {
-  setTimeout(() => {
-    chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
-      if (dataUrl) {
-        if (!clipSession.events) clipSession.events = [];
-        clipSession.events.push({
-          id: Date.now(),
-          type: 'screenshot',
-          data: dataUrl
-        });
-        saveSessionToStorage();
-        renderTimeline();
-      }
-    });
-  }, 50);
+// --- Action: Take Screenshot (Now Starts Crop Mode) ---
+async function takeScreenshot() {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    if (!tab || !tab.id || !tab.url || tab.url.startsWith("chrome://")) {
+        setStatus("Cannot screenshot system pages.", "error");
+        return;
+    }
+
+    setStatus("Draw a box on the page...", "");
+    
+    // Tell the content script to start crop mode
+    chrome.tabs.sendMessage(tab.id, { action: "START_CROP" });
+    
+    // Close the popup so the user can interact with the page
+    window.close();
 }
 
 function addScratchpadNote() {
@@ -308,3 +309,16 @@ async function downloadSessionAsPDF() {
   saveBtn.disabled = false;
   setStatus('PDF downloaded!', 'success');
 }
+// Listen for updates from the background script
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "REFRESH_TIMELINE") {
+        // Reload data from storage and re-render
+        chrome.storage.local.get(['clipSession'], (result) => {
+            if (result.clipSession) {
+                clipSession = result.clipSession;
+                renderTimeline();
+                setStatus("Screenshot captured!", "success");
+            }
+        });
+    }
+});
