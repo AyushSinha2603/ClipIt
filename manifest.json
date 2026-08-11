@@ -2,10 +2,12 @@
   "manifest_version": 3,
   "name": "ClipIt Note Taker",
   "version": "1.0",
-  "description": "Capture highlights and screenshots chronologically into a PDF.",
+  "description": "Capture highlights, notes, and screenshots chronologically into a PDF.",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "scripting",
+    "downloads"
   ],
   "host_permissions": [
     "<all_urls>"
