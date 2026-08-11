@@ -1,15 +1,23 @@
 {
   "manifest_version": 3,
-  "name": "ClipIt Notes (Persistent Session)",
+  "name": "ClipIt Note Taker",
   "version": "1.0",
-  "description": "Auto-saves screenshots and notes persistently until you are ready to export to PDF.",
+  "description": "Capture highlights and screenshots chronologically into a PDF.",
   "permissions": [
     "storage",
-    "activeTab",
-    "scripting",
-    "downloads"
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
 }

@@ -6,12 +6,13 @@ const { jsPDF } = window.jspdf;
 let clipSession = {
   title: '',
   tags: '',
-  events: [] // Master list: array of { id: timestamp, type: 'screenshot'|'text', data: '...' }
+  events: [] // Master list: array of { id: timestamp, type: 'screenshot'|'text', data: '...', color?: 'string' }
 };
 
 // --- DOM Elements ---
 const timeline = document.getElementById('clipTimeline');
 const scratchpad = document.getElementById('scratchpad');
+const status = document.getElementById('status'); // Get status element
 
 // --- Initialization: Load and Restore Persistent Session Draft ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -19,11 +20,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   chrome.storage.local.get(['clipSession'], (result) => {
     if (result.clipSession) {
       clipSession = result.clipSession;
-
+      
       // 2. Restore form fields
       document.getElementById('noteTitle').value = clipSession.title || '';
       document.getElementById('noteTags').value = clipSession.tags || '';
-
+      
       // 3. Redraw the unified chronological timeline
       renderTimeline();
     } else {
@@ -49,7 +50,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('saveBtn').addEventListener('click', downloadSessionAsPDF);
 
   // --- Highlight Color Listeners ---
-  // Clicking a color highlights on page AND adds text as bullet
+  // Connects color buttons to the function that gets selected text from the page
   document.querySelectorAll('.color-btn').forEach(btn => {
     btn.addEventListener('click', handleHighlightAction);
   });
@@ -58,34 +59,36 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Helper: Auto-populate title if session draft is new
 async function autoPopulateTitle() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab.title && !clipSession.title) {
+  // Check if tab exists before trying to access title
+  if (tab && tab.title && !clipSession.title) {
     document.getElementById('noteTitle').value = tab.title;
     clipSession.title = tab.title;
     saveSessionToStorage();
   }
 }
 
-// --- Write Master State to Persistent Storage ---
+// Write Master State to Persistent Storage
 function saveSessionToStorage() {
   chrome.storage.local.set({ clipSession });
 }
 
-// --- Rendering the Unified Chronological Timeline ---
+// Rendering the Unified Chronological Timeline in the Popup
 function renderTimeline() {
   timeline.innerHTML = ''; // Clear existing DOM
-
-  if (clipSession.events.length === 0) {
+  
+  if (!clipSession.events || clipSession.events.length === 0) {
     timeline.style.display = 'none'; // Hide container when empty
     return;
   }
-
+  
   timeline.style.display = 'flex'; // Show container
 
+  // Iterate through events in order
   clipSession.events.forEach(event => {
     const itemDiv = document.createElement('div');
     itemDiv.className = `timeline-item timeline-${event.type}`;
     itemDiv.id = `event-${event.id}`;
-
+    
     // 1. Create content based on type
     if (event.type === 'screenshot') {
       const img = document.createElement('img');
@@ -95,14 +98,19 @@ function renderTimeline() {
     } else if (event.type === 'text') {
       const textDiv = document.createElement('div');
       textDiv.className = 'timeline-text';
-      textDiv.textContent = event.data;
+      // Apply background color if stored (visual cue in popup)
+      if (event.color) {
+          textDiv.style.borderLeft = `5px solid ${event.color}`;
+          textDiv.style.paddingLeft = '10px';
+      }
+      textDiv.textContent = event.data; 
       itemDiv.appendChild(textDiv);
     }
 
-    // 2. Create deletion 'X' button (delete specific screenshot/note)
+    // 2. Create deletion button 'X' icon
     const deleteBtn = document.createElement('div');
     deleteBtn.className = 'timeline-delete';
-    deleteBtn.innerHTML = '&#10005;';
+    deleteBtn.innerHTML = '&#10005;'; 
     deleteBtn.title = 'Delete this item from session';
     deleteBtn.addEventListener('click', () => deleteTimelineItem(event.id));
     itemDiv.appendChild(deleteBtn);
@@ -114,7 +122,7 @@ function renderTimeline() {
   timeline.scrollTop = timeline.scrollHeight;
 }
 
-// Helper: Delete item from unified timeline, then redraw
+// Helper: Delete item from unified timeline Master array and redraw
 function deleteTimelineItem(idToDelete) {
   clipSession.events = clipSession.events.filter(event => event.id !== idToDelete);
   saveSessionToStorage();
@@ -123,10 +131,11 @@ function deleteTimelineItem(idToDelete) {
 
 // --- Action: Take Screenshot ---
 function takeScreenshot() {
-  // Slight delay to avoid capturing the popup opening
+  // Slight delay to avoid capturing the popup opening animation
   setTimeout(() => {
     chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
       if (dataUrl) {
+        if (!clipSession.events) clipSession.events = []; // Ensure array exists
         clipSession.events.push({
           id: Date.now(),
           type: 'screenshot',
@@ -144,150 +153,223 @@ function addScratchpadNote() {
   const content = scratchpad.value.trim();
   if (!content) return;
 
+  if (!clipSession.events) clipSession.events = []; // Ensure array exists
   clipSession.events.push({
     id: Date.now(),
     type: 'text',
-    data: content
+    data: content 
   });
   saveSessionToStorage();
   renderTimeline();
   scratchpad.value = ''; // Clear scratchpad
 }
 
-// --- Action: Reset Session (clear storage, state, and UI) ---
+// --- Action: Reset Session ---
 async function resetSession() {
   if (!confirm('Are you sure you want to discard this entire draft note session? All screenshots and notes will be deleted.')) return;
 
   // 1. Clear storage
   await chrome.storage.local.remove('clipSession');
-
+  
   // 2. Clear state
   clipSession = { title: '', tags: '', events: [] };
-
+  
   // 3. Clear UI
   document.getElementById('noteTitle').value = '';
   document.getElementById('noteTags').value = '';
   renderTimeline();
   scratchpad.value = '';
-  document.getElementById('status').textContent = 'Session draft cleared.';
-  setTimeout(() => document.getElementById('status').textContent = '', 1500);
-
+  status.textContent = 'Session draft cleared.';
+  setTimeout(() => status.textContent = '', 1500);
+  
   autoPopulateTitle(); // populate title for new session
 }
 
 // =========================================
-// CHRONOLOGICAL PDF DOWNLOAD
+// NEW: handleHighlightAction
+// Requests selected text from the web page
 // =========================================
-async function downloadSessionAsPDF() {
+async function handleHighlightAction(event) {
+  const color = event.target.style.backgroundColor || event.target.dataset.color; // Get color from button
+
+  status.textContent = "Capturing selection...";
+
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const status = document.getElementById('status');
-  status.className = 'status';
-  status.textContent = 'Generating PDF...';
 
-  const saveBtn = document.getElementById('saveBtn');
-  saveBtn.disabled = true;
-  saveBtn.textContent = 'Downloading...';
-
-  if (!clipSession.title && clipSession.events.length === 0) {
-    status.className = 'status error';
-    status.textContent = 'Nothing to download.';
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Save as PDF';
-    return;
+  // Safety check to prevent errors on chrome:// pages
+  if (!tab.url || tab.url.startsWith("chrome://")) {
+      status.textContent = "Cannot capture text from Chrome system pages.";
+      setTimeout(() => status.textContent = "", 2500);
+      return;
   }
 
+  // Send message to the content script running in the web page tab
   try {
-    // Initialize jsPDF (A4 size)
-    const doc = new jsPDF();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 15;
-    let yPosition = margin;
+    const response = await chrome.tabs.sendMessage(tab.id, { action: "GET_SELECTION" });
 
-    // Helper: add a new page if we're about to overflow
-    const ensureSpace = (neededHeight) => {
-      if (yPosition + neededHeight > pageHeight - margin) {
-        doc.addPage();
-        yPosition = margin;
+    if (response && response.text) {
+      const selectedText = response.text.trim();
+
+      if (selectedText) {
+        if (!clipSession.events) clipSession.events = []; // Ensure array exists
+        
+        // Add to the master timeline list as a "text" event
+        clipSession.events.push({
+          id: Date.now(),
+          type: 'text',
+          data: selectedText,
+          color: color // Store the color used
+        });
+
+        saveSessionToStorage();
+        renderTimeline();
+        status.textContent = "Highlighted text captured!";
+        setTimeout(() => status.textContent = "", 1500);
+      } else {
+         status.textContent = "No text selected on page. Select text first.";
+         setTimeout(() => status.textContent = "", 2500);
       }
-    };
-
-    // 1. Add Title
-    doc.setFontSize(22);
-    doc.setFont('helvetica', 'bold');
-    doc.text(clipSession.title || 'Untitled Session Note', margin, yPosition);
-    yPosition += 12;
-
-    // 2. Add Meta info
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Date: ${new Date().toLocaleString()}`, margin, yPosition);
-    yPosition += 5;
-    doc.text(`Source: ${tab.url}`, margin, yPosition);
-    yPosition += 5;
-    doc.text(`Tags: ${clipSession.tags || '(none)'}`, margin, yPosition);
-    yPosition += 12;
-
-    // 3. Process events chronologically
-    for (const event of clipSession.events) {
-      if (event.type === 'text') {
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'normal');
-        const lines = doc.splitTextToSize(`• ${event.data}`, pageWidth - margin * 2);
-        ensureSpace(lines.length * 6);
-        doc.text(lines, margin, yPosition);
-        yPosition += lines.length * 6 + 4;
-      } else if (event.type === 'screenshot') {
-        // Get image dimensions to preserve aspect ratio
-        const imgProps = doc.getImageProperties(event.data);
-        const maxImgWidth = pageWidth - margin * 2;
-        const imgWidth = maxImgWidth;
-        const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-
-        ensureSpace(imgHeight);
-        doc.addImage(event.data, 'PNG', margin, yPosition, imgWidth, imgHeight);
-        yPosition += imgHeight + 8;
-      }
+    } else {
+        // Handle case where content script is not loaded or didn't respond
+        status.textContent = "Error: Refresh the web page and try again.";
+        setTimeout(() => status.textContent = "", 2500);
     }
-
-    // 4. Save the PDF
-    const safeTitle = (clipSession.title || 'session-note').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'session-note';
-    doc.save(`${safeTitle}.pdf`);
-
-    status.className = 'status success';
-    status.textContent = 'PDF downloaded!';
-  } catch (err) {
-    console.error('PDF generation failed:', err);
-    status.className = 'status error';
-    status.textContent = 'Failed to generate PDF.';
-  } finally {
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Save as PDF';
-    setTimeout(() => { status.textContent = ''; }, 2500);
+  } catch (error) {
+    console.error("Error communicating with content script:", error);
+    status.textContent = "Error: Refresh the web page and try again.";
+    setTimeout(() => status.textContent = "", 2500);
   }
 }
 
-// --- Action: Highlight color click -> highlight on page + add bullet note ---
-async function handleHighlightAction(e) {
-  const color = e.currentTarget.dataset.color || e.currentTarget.getAttribute('data-color');
-  if (!color) return;
-
+// =========================================
+// NEW: COMPLETED CHRONOLOGICAL PDF DOWNLOAD
+// =========================================
+async function downloadSessionAsPDF() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  status.className = 'status';
+  status.textContent = 'Generating PDF...';
+  
+  const saveBtn = document.getElementById('saveBtn');
+  const originalBtnText = saveBtn.textContent;
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Downloading...';
 
-  // Ask the content script to highlight the current selection and return its text
-  chrome.tabs.sendMessage(tab.id, { action: 'highlight', color }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.error(chrome.runtime.lastError.message);
-      return;
-    }
-    if (response && response.text) {
-      clipSession.events.push({
-        id: Date.now(),
-        type: 'text',
-        data: response.text
-      });
-      saveSessionToStorage();
-      renderTimeline();
-    }
-  });
+  if (!clipSession.title && (!clipSession.events || clipSession.events.length === 0)) {
+    status.className = 'status error';
+    status.textContent = 'Nothing to download.';
+    saveBtn.disabled = false;
+    saveBtn.textContent = originalBtnText;
+    return;
+  }
+
+  // Initialize jsPDF (A4 size, units in mm)
+  const doc = new jsPDF('p', 'mm', 'a4');
+  let yPosition = 20; // Track vertical position (top margin)
+  const xMargin = 15;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const contentWidth = pageWidth - (xMargin * 2);
+
+  // 1. Add Title
+  doc.setFontSize(22);
+  doc.setFont("helvetica", "bold");
+  // Basic text wrap for long titles
+  const titleLines = doc.splitTextToSize(clipSession.title || 'Untitled Session Note', contentWidth);
+  doc.text(titleLines, xMargin, yPosition);
+  yPosition += (titleLines.length * 9); // Adjust Y based on title lines
+
+  // 2. Add Meta info
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  yPosition += 5;
+  doc.text(`Date: ${new Date().toLocaleString()}`, xMargin, yPosition);
+  yPosition += 5;
+  // Handle long URLs
+  const urlLines = doc.splitTextToSize(`Source: ${tab.url}`, contentWidth);
+  doc.text(urlLines, xMargin, yPosition);
+  yPosition += (urlLines.length * 5); // Adjust Y
+
+  doc.text(`Tags: ${clipSession.tags || '(none)'}`, xMargin, yPosition);
+  yPosition += 15; // Space before events
+
+  // 3. Process Events Chronologically
+  if (clipSession.events) {
+      for (const event of clipSession.events) {
+          // Check for page overflow (simple buffer)
+          if (yPosition > pageHeight - 30) {
+              doc.addPage();
+              yPosition = 20;
+          }
+
+          if (event.type === 'text') {
+              doc.setFontSize(12);
+              doc.setFont("helvetica", "normal");
+              
+              // Set color based on highlight (optional, PDF text will be black, 
+              // but we can add a small colored rectangle next to it)
+              if (event.color) {
+                  // doc.setTextColor(event.color); // makes text hard to read in PDF
+                  // Draw a vertical line matching the highlight color
+                  doc.setDrawColor(event.color);
+                  doc.setLineWidth(1);
+                  // We'll calculate height after splitting text
+              } else {
+                  doc.setDrawColor(0); // black default
+                  doc.setLineWidth(0.1);
+              }
+
+              // Word wrap: split text to fit content width minus bullet space
+              const textX = xMargin + 7;
+              const textWidth = contentWidth - 7;
+              const lines = doc.splitTextToSize(event.data, textWidth);
+              
+              // Draw text and bullet
+              doc.text("•", xMargin, yPosition);
+              doc.text(lines, textX, yPosition);
+
+              // Draw color indicator line if color exists
+              if (event.color) {
+                  const textHeight = lines.length * 6; // approximate line height
+                  doc.line(xMargin - 2, yPosition - 4, xMargin - 2, yPosition + textHeight - 4);
+              }
+
+              yPosition += (lines.length * 6); // Adjust Y based on lines added
+              yPosition += 8; // Extra spacing after the note
+
+          } else if (event.type === 'screenshot') {
+              try {
+                  // Add Image: dataUrl, format, x, y, width, height
+                  // We need to scale standard image (16:9) to fit width
+                  const imgWidth = contentWidth; 
+                  const imgHeight = (imgWidth * 9) / 16; // Assuming 16:9 aspect ratio
+
+                  // Check if image fits on current page
+                  if (yPosition + imgHeight > pageHeight - 20) {
+                      doc.addPage();
+                      yPosition = 20;
+                  }
+
+                  doc.addImage(event.data, 'PNG', xMargin, yPosition, imgWidth, imgHeight);
+                  yPosition += imgHeight + 10; // Spacing after image
+              } catch (imgError) {
+                  console.error("Error adding image to PDF:", imgError);
+                  doc.setFont("helvetica", "italic");
+                  doc.text("[Error adding screenshot]", xMargin, yPosition);
+                  yPosition += 10;
+              }
+          }
+      }
+  }
+
+  // Final status update and save file
+  status.textContent = 'Downloading PDF...';
+  // Use a clean filename
+  const filename = (clipSession.title || 'session_note').replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.pdf';
+  doc.save(filename);
+
+  // Reset UI button state
+  saveBtn.disabled = false;
+  saveBtn.textContent = originalBtnText;
+  status.textContent = 'PDF downloaded successfully!';
+  setTimeout(() => status.textContent = '', 2500);
 }
