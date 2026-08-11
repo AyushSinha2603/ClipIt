@@ -3,26 +3,31 @@
 // Function to visually highlight selected text on the webpage
 function highlightSelection(color) {
   const selection = window.getSelection();
-  if (!selection.rangeCount) return "";
+  if (!selection.rangeCount || selection.isCollapsed) return "";
 
-  const range = selection.getRangeAt(0);
   const selectedText = selection.toString().trim();
-
   if (!selectedText) return "";
 
-  // Create a span element to wrap the highlighted text
-  const span = document.createElement('span');
-  span.style.backgroundColor = color || 'yellow';
-  span.style.color = '#000'; // Keep text dark for legibility
-  span.className = 'clipit-highlight';
+  // The fallback color if none is provided
+  const highlightColor = color || 'yellow';
 
+  // Use the execCommand approach. It is an older API but it handles 
+  // highlighting across different HTML elements much better than manual DOM manipulation.
   try {
-    range.surroundContents(span);
+    // We must temporarily enable designMode to use execCommand in some contexts
+    const previousDesignMode = document.designMode;
+    document.designMode = "on";
+    
+    // Apply the highlight
+    document.execCommand("hiliteColor", false, highlightColor);
+    
+    // Restore the previous state
+    document.designMode = previousDesignMode;
+    
+    // Clear the selection so the user can see the new highlight color
     selection.removeAllRanges();
   } catch (e) {
-    // If the selection spans multiple HTML tags, surroundContents might fail.
-    // Fall back to extracting text without visual wrapper on page.
-    console.warn("ClipIt: Could not wrap selection across complex tags, capturing text anyway.", e);
+    console.warn("ClipIt: Could not apply visual highlight.", e);
   }
 
   return selectedText;
@@ -34,5 +39,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const text = highlightSelection(request.color);
     sendResponse({ text: text });
   }
-  return true; // Keep message channel open for async response
+  // Return true to keep the message channel open for the async response
+  return true; 
 });
