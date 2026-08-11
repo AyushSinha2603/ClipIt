@@ -1,9 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "ClipIt Notes",
+  "name": "ClipIt Notes (Persistent Session)",
   "version": "1.0",
-  "permissions": ["storage", "activeTab", "scripting"],
-  "host_permissions": ["https://api.github.com/*"],
-  "action": { "default_popup": "popup.html" },
-  "options_page": "options.html"
+  "description": "Auto-saves screenshots and notes persistently until you are ready to export to PDF.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "downloads"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
 }
