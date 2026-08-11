@@ -189,55 +189,71 @@ async function resetSession() {
 // NEW: handleHighlightAction
 // Requests selected text from the web page
 // =========================================
+// =========================================
+// NEW: handleHighlightAction
+// Requests selected text from the web page and highlights it
+// =========================================
 async function handleHighlightAction(event) {
-  const color = event.target.style.backgroundColor || event.target.dataset.color; // Get color from button
+  // Get color from the dataset of the clicked button
+  const color = event.target.dataset.color; 
 
   status.textContent = "Capturing selection...";
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-  // Safety check to prevent errors on chrome:// pages
   if (!tab.url || tab.url.startsWith("chrome://")) {
-      status.textContent = "Cannot capture text from Chrome system pages.";
+      status.className = 'status error';
+      status.textContent = "Cannot capture text from system pages.";
       setTimeout(() => status.textContent = "", 2500);
       return;
   }
 
-  // Send message to the content script running in the web page tab
   try {
-    const response = await chrome.tabs.sendMessage(tab.id, { action: "GET_SELECTION" });
+    // Send message to content script, including the chosen color
+    const response = await chrome.tabs.sendMessage(tab.id, { 
+        action: "GET_SELECTION",
+        color: color 
+    });
 
     if (response && response.text) {
-      const selectedText = response.text.trim();
+      const selectedText = response.text;
 
-      if (selectedText) {
-        if (!clipSession.events) clipSession.events = []; // Ensure array exists
-        
-        // Add to the master timeline list as a "text" event
-        clipSession.events.push({
-          id: Date.now(),
-          type: 'text',
-          data: selectedText,
-          color: color // Store the color used
-        });
+      if (!clipSession.events) clipSession.events = [];
+      
+      // Add to timeline
+      clipSession.events.push({
+        id: Date.now(),
+        type: 'text',
+        data: selectedText,
+        color: color 
+      });
 
-        saveSessionToStorage();
-        renderTimeline();
-        status.textContent = "Highlighted text captured!";
-        setTimeout(() => status.textContent = "", 1500);
-      } else {
-         status.textContent = "No text selected on page. Select text first.";
-         setTimeout(() => status.textContent = "", 2500);
-      }
+      saveSessionToStorage();
+      renderTimeline();
+      
+      status.className = 'status success';
+      status.textContent = "Highlighted text captured!";
+      setTimeout(() => {
+          status.textContent = "";
+          status.className = "status";
+      }, 1500);
+      
     } else {
-        // Handle case where content script is not loaded or didn't respond
-        status.textContent = "Error: Refresh the web page and try again.";
-        setTimeout(() => status.textContent = "", 2500);
+         status.className = 'status error';
+         status.textContent = "No text selected on page.";
+         setTimeout(() => {
+             status.textContent = "";
+             status.className = "status";
+         }, 2500);
     }
   } catch (error) {
     console.error("Error communicating with content script:", error);
-    status.textContent = "Error: Refresh the web page and try again.";
-    setTimeout(() => status.textContent = "", 2500);
+    status.className = 'status error';
+    status.textContent = "Error: Please refresh the web page.";
+    setTimeout(() => {
+        status.textContent = "";
+        status.className = "status";
+    }, 2500);
   }
 }
 
