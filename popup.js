@@ -1,14 +1,12 @@
-// popup.js
-
 const { jsPDF } = window.jspdf;
 
 let clipSession = { title: '', tags: '', events: [] };
-let timeline, scratchpad, status, noteTitle, noteTags;
+let timeline, scratchpad, statusEl, noteTitle, noteTags;
 
 document.addEventListener('DOMContentLoaded', async () => {
   timeline = document.getElementById('clipTimeline');
   scratchpad = document.getElementById('scratchpad');
-  status = document.getElementById('status');
+  statusEl = document.getElementById('status');
   noteTitle = document.getElementById('noteTitle');
   noteTags = document.getElementById('noteTags');
 
@@ -30,6 +28,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('resetBtn').addEventListener('click', resetSession);
   document.getElementById('addNoteBtn').addEventListener('click', addScratchpadNote);
   document.getElementById('saveBtn').addEventListener('click', downloadSessionAsPDF);
+  document.getElementById('gitBtn').addEventListener('click', pushToGitHub);
+  document.getElementById('aiBtn').addEventListener('click', generateAIInsights);
+  
+  const optionsBtn = document.getElementById('optionsBtn');
+  if (optionsBtn) optionsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
 
   document.querySelectorAll('.color-btn').forEach(btn => {
     btn.addEventListener('click', handleHighlightAction);
@@ -63,13 +66,15 @@ function renderTimeline() {
     if (event.type === 'screenshot') {
       const img = document.createElement('img');
       img.src = event.data;
+      img.style.width = '100%';
+      img.style.borderRadius = '4px';
       itemDiv.appendChild(img);
     } else if (event.type === 'text') {
       const textDiv = document.createElement('div');
       textDiv.className = 'timeline-text';
       if (event.color) {
         textDiv.style.borderLeft = `4px solid ${event.color}`;
-        textDiv.style.paddingLeft = '6px';
+        textDiv.style.paddingLeft = '8px';
       }
       textDiv.textContent = `• ${event.data}`;
       itemDiv.appendChild(textDiv);
@@ -78,6 +83,7 @@ function renderTimeline() {
     const deleteBtn = document.createElement('div');
     deleteBtn.className = 'timeline-delete';
     deleteBtn.innerHTML = '&#10005;';
+    deleteBtn.style.cursor = 'pointer';
     deleteBtn.title = 'Delete this item';
     deleteBtn.addEventListener('click', () => deleteTimelineItem(event.id));
     itemDiv.appendChild(deleteBtn);
@@ -92,32 +98,23 @@ function deleteTimelineItem(id) {
   renderTimeline();
 }
 
-// Ensure content script is injected
 async function ensureScriptInjected(tabId) {
-    try {
-        await chrome.scripting.executeScript({
-            target: { tabId: tabId },
-            files: ["content.js"]
-        });
-    } catch (err) {
-        // Ignore if already injected
-    }
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tabId }, files: ["content.js"] });
+  } catch (err) {}
 }
 
 async function startCropping() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab || !tab.url || tab.url.startsWith("chrome://") || tab.url.startsWith("chrome-extension://")) {
-      setStatus("Cannot screenshot system pages.", "error"); return;
+  if (!tab || !tab.url || tab.url.startsWith("chrome://")) {
+    setStatus("Cannot screenshot system pages.", "error"); return;
   }
-  
   await ensureScriptInjected(tab.id);
-  
-  chrome.tabs.sendMessage(tab.id, { action: "START_CROP" }, (response) => {
-      if (chrome.runtime.lastError) {
-          setStatus("Please refresh the page first.", "error");
-          return;
-      }
-      window.close(); // Close popup so user can draw the box
+  chrome.tabs.sendMessage(tab.id, { action: "START_CROP" }, () => {
+    if (chrome.runtime.lastError) {
+      setStatus("Please refresh the page first.", "error"); return;
+    }
+    window.close();
   });
 }
 
@@ -139,36 +136,145 @@ async function resetSession() {
 }
 
 async function handleHighlightAction(e) {
-  const color = e.target.dataset.color;
+  const color = e.target.dataset.color || e.target.style.backgroundColor;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-  if (!tab || !tab.url || tab.url.startsWith("chrome://") || tab.url.startsWith("chrome-extension://")) {
+  if (!tab || !tab.url || tab.url.startsWith("chrome://")) {
     setStatus("Cannot highlight on system pages.", "error"); return;
   }
 
   await ensureScriptInjected(tab.id);
 
   chrome.tabs.sendMessage(tab.id, { action: "GET_SELECTION", color: color }, (response) => {
-    if (chrome.runtime.lastError) {
-      setStatus("Error. Try refreshing the webpage.", "error"); return;
+    if (chrome.runtime.lastError || !response || !response.text) {
+      setStatus("Select text on page first!", "error"); return;
     }
-    if (response && response.text) {
-      if (!clipSession.events) clipSession.events = [];
-      clipSession.events.push({ id: Date.now(), type: 'text', data: response.text, color: color });
-      saveSessionToStorage(); renderTimeline();
-      setStatus("Text captured!", "success");
-    } else {
-      setStatus("Highlight some text first!", "error");
-    }
+    if (!clipSession.events) clipSession.events = [];
+    clipSession.events.push({ id: Date.now(), type: 'text', data: response.text, color: color });
+    saveSessionToStorage(); renderTimeline();
+    setStatus("Text captured!", "success");
   });
 }
 
 function setStatus(msg, type) {
-  status.textContent = msg; status.className = `status ${type}`;
-  if (msg) setTimeout(() => { status.textContent = ''; status.className = 'status'; }, 2500);
+  statusEl.textContent = msg; 
+  statusEl.style.color = type === 'error' ? '#cf222e' : '#57ab5a';
+  if (msg) setTimeout(() => { statusEl.textContent = ''; }, 3000);
 }
 
-// PDF Generation
+// =========================================
+// FEATURE 1: AI SUMMARY (Local window.ai)
+// =========================================
+async function generateAIInsights() {
+  const aiBtn = document.getElementById('aiBtn');
+  
+  if (!window.ai || !window.ai.languageModel) {
+    setStatus("Local AI not enabled in Chrome flags.", "error");
+    scratchpad.value = "Enable Chrome's Prompt API in chrome://flags/#prompt-api-for-extension-models";
+    return;
+  }
+
+  const textEvents = clipSession.events.filter(e => e.type === 'text').map(e => e.data);
+  if (textEvents.length === 0) {
+    setStatus("No text notes to summarize.", "error"); return;
+  }
+
+  aiBtn.disabled = true;
+  setStatus("✨ AI is analyzing...", "");
+
+  try {
+    const session = await window.ai.languageModel.create();
+    const combinedText = textEvents.join('\n\n');
+
+    const summary = await session.prompt(`Summarize the following notes in 2-3 concise bullet points:\n${combinedText}`);
+    const tags = await session.prompt(`Suggest 3-5 comma-separated single-word tags for this content:\n${combinedText}`);
+
+    scratchpad.value = `### AI Summary\n${summary}`;
+    
+    let existingTags = noteTags.value.split(',').map(t => t.trim()).filter(Boolean);
+    let newTags = tags.split(',').map(t => t.trim().replace(/^[#\-*\s]+/, '')).filter(Boolean);
+    noteTags.value = Array.from(new Set([...existingTags, ...newTags])).join(', ');
+    
+    clipSession.tags = noteTags.value;
+    saveSessionToStorage();
+    setStatus("AI Analysis complete!", "success");
+  } catch (err) {
+    console.error(err);
+    setStatus("AI execution failed.", "error");
+  } finally {
+    aiBtn.disabled = false;
+  }
+}
+
+// =========================================
+// FEATURE 2: GITHUB PUSH
+// =========================================
+async function pushToGitHub() {
+  const gitBtn = document.getElementById('gitBtn');
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  if (!clipSession.title && (!clipSession.events || clipSession.events.length === 0)) {
+    setStatus("Session is empty.", "error"); return;
+  }
+
+  chrome.storage.sync.get(['ghToken', 'ghOwner', 'ghRepo', 'ghPath'], async (config) => {
+    if (!config.ghToken || !config.ghOwner || !config.ghRepo) {
+      setStatus("Configure GitHub in settings first.", "error");
+      chrome.runtime.openOptionsPage();
+      return;
+    }
+
+    gitBtn.disabled = true;
+    setStatus("Pushing to GitHub...", "");
+
+    const sanitizedTitle = (clipSession.title || 'Untitled').replace(/[\\/:*?"<>|]/g, '_');
+    const fileName = `${sanitizedTitle.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}.md`;
+    const targetPath = config.ghPath ? `${config.ghPath}/${fileName}` : fileName;
+
+    let md = `# ${clipSession.title || 'Untitled Research Session'}\n\n`;
+    md += `- **Date:** ${new Date().toLocaleString()}\n`;
+    if (tab && tab.url) md += `- **Source:** [${tab.url}](${tab.url})\n`;
+    if (clipSession.tags) md += `- **Tags:** \`${clipSession.tags}\`\n\n---\n\n## Timeline Notes\n\n`;
+
+    clipSession.events.forEach((item, idx) => {
+      if (item.type === 'text') {
+        md += `* ${item.data}\n\n`;
+      } else if (item.type === 'screenshot') {
+        md += `* **Screenshot ${idx + 1}:**\n\n<img src="${item.data}" width="600" />\n\n`;
+      }
+    });
+
+    const utf8Bytes = new TextEncoder().encode(md);
+    const base64Content = btoa(String.fromCharCode(...utf8Bytes));
+
+    try {
+      const res = await fetch(`https://api.github.com/repos/${config.ghOwner}/${config.ghRepo}/contents/${targetPath}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${config.ghToken}`,
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: `Add note: ${clipSession.title || 'Untitled'}`,
+          content: base64Content
+        })
+      });
+
+      if (!res.ok) throw new Error('GitHub API error');
+      setStatus("Synced to GitHub!", "success");
+    } catch (err) {
+      console.error(err);
+      setStatus("Git Push Failed.", "error");
+    } finally {
+      gitBtn.disabled = false;
+    }
+  });
+}
+
+// =========================================
+// FEATURE 3: PDF EXPORT
+// =========================================
 async function downloadSessionAsPDF() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const saveBtn = document.getElementById('saveBtn');

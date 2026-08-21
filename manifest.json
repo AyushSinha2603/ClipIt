@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ClipIt Note Taker",
-  "version": "1.0",
-  "description": "Capture highlights, notes, and cropped screenshots chronologically into a PDF.",
+  "version": "1.1",
+  "description": "Capture highlights, notes, and screenshots chronologically into PDF or push to GitHub.",
   "permissions": [
     "storage",
     "activeTab",
@@ -11,29 +11,21 @@
   ],
   "host_permissions": [
     "http://*/*",
-    "https://*/*"
+    "https://*/*",
+    "https://api.github.com/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
+  "options_page": "options.html",
   "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "128": "icons/icon128.png"
-    }
+    "default_popup": "popup.html"
   },
   "content_scripts": [
     {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content.js"
-      ],
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
       "run_at": "document_idle"
     }
-  ],
-  "icons": {
-    "128": "icons/icon128.png"
-  }
+  ]
 }
