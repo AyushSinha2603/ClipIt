@@ -1,3 +1,5 @@
+// popup.js
+
 const { jsPDF } = window.jspdf;
 
 let clipSession = { title: '', tags: '', events: [] };
@@ -24,15 +26,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   noteTitle.addEventListener('input', (e) => { clipSession.title = e.target.value; saveSessionToStorage(); });
   noteTags.addEventListener('input', (e) => { clipSession.tags = e.target.value; saveSessionToStorage(); });
 
-  document.getElementById('snapBtn').addEventListener('click', startCropping);
-  document.getElementById('resetBtn').addEventListener('click', resetSession);
-  document.getElementById('addNoteBtn').addEventListener('click', addScratchpadNote);
-  document.getElementById('saveBtn').addEventListener('click', downloadSessionAsPDF);
-  document.getElementById('gitBtn').addEventListener('click', pushToGitHub);
-  document.getElementById('aiBtn').addEventListener('click', generateAIInsights);
-  
-  const optionsBtn = document.getElementById('optionsBtn');
-  if (optionsBtn) optionsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
+  // Safe binding: ensures script doesn't crash if an ID is missing
+  const bindClick = (id, fn) => { 
+      const el = document.getElementById(id); 
+      if(el) el.addEventListener('click', fn); 
+  };
+
+  bindClick('snapBtn', startCropping);
+  bindClick('resetBtn', resetSession);
+  bindClick('addNoteBtn', addScratchpadNote);
+  bindClick('saveBtn', downloadSessionAsPDF);
+  bindClick('gitBtn', pushToGitHub);
+  bindClick('aiBtn', generateAIInsights);
+  bindClick('optionsBtn', () => chrome.runtime.openOptionsPage());
 
   document.querySelectorAll('.color-btn').forEach(btn => {
     btn.addEventListener('click', handleHighlightAction);
@@ -55,7 +61,8 @@ function saveSessionToStorage() {
 function renderTimeline() {
   timeline.innerHTML = '';
   if (!clipSession.events || clipSession.events.length === 0) {
-    timeline.style.display = 'none'; return;
+    timeline.style.display = 'none';
+    return;
   }
   timeline.style.display = 'flex';
 
@@ -83,8 +90,7 @@ function renderTimeline() {
     const deleteBtn = document.createElement('div');
     deleteBtn.className = 'timeline-delete';
     deleteBtn.innerHTML = '&#10005;';
-    deleteBtn.style.cursor = 'pointer';
-    deleteBtn.title = 'Delete this item';
+    deleteBtn.title = 'Delete item';
     deleteBtn.addEventListener('click', () => deleteTimelineItem(event.id));
     itemDiv.appendChild(deleteBtn);
     timeline.appendChild(itemDiv);
@@ -107,12 +113,14 @@ async function ensureScriptInjected(tabId) {
 async function startCropping() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.url || tab.url.startsWith("chrome://")) {
-    setStatus("Cannot screenshot system pages.", "error"); return;
+    setStatus("Cannot clip system pages.", "error");
+    return;
   }
   await ensureScriptInjected(tab.id);
   chrome.tabs.sendMessage(tab.id, { action: "START_CROP" }, () => {
     if (chrome.runtime.lastError) {
-      setStatus("Please refresh the page first.", "error"); return;
+      setStatus("Refresh page first.", "error");
+      return;
     }
     window.close();
   });
@@ -123,16 +131,21 @@ function addScratchpadNote() {
   if (!content) return;
   if (!clipSession.events) clipSession.events = [];
   clipSession.events.push({ id: Date.now(), type: 'text', data: content });
-  saveSessionToStorage(); renderTimeline();
+  saveSessionToStorage();
+  renderTimeline();
   scratchpad.value = '';
 }
 
 async function resetSession() {
-  if (!confirm('Discard all screenshots and notes in this session?')) return;
+  if (!confirm('Discard all items in this session?')) return;
   await chrome.storage.local.remove('clipSession');
   clipSession = { title: '', tags: '', events: [] };
-  noteTitle.value = ''; noteTags.value = ''; scratchpad.value = '';
-  renderTimeline(); setStatus('Session cleared.', 'success'); autoPopulateTitle();
+  noteTitle.value = '';
+  noteTags.value = '';
+  scratchpad.value = '';
+  renderTimeline();
+  setStatus('Session cleared.', 'success');
+  autoPopulateTitle();
 }
 
 async function handleHighlightAction(e) {
@@ -140,26 +153,29 @@ async function handleHighlightAction(e) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
   if (!tab || !tab.url || tab.url.startsWith("chrome://")) {
-    setStatus("Cannot highlight on system pages.", "error"); return;
+    setStatus("Cannot highlight on system pages.", "error");
+    return;
   }
 
   await ensureScriptInjected(tab.id);
 
   chrome.tabs.sendMessage(tab.id, { action: "GET_SELECTION", color: color }, (response) => {
     if (chrome.runtime.lastError || !response || !response.text) {
-      setStatus("Select text on page first!", "error"); return;
+      setStatus("Select text on page first!", "error");
+      return;
     }
     if (!clipSession.events) clipSession.events = [];
     clipSession.events.push({ id: Date.now(), type: 'text', data: response.text, color: color });
-    saveSessionToStorage(); renderTimeline();
+    saveSessionToStorage();
+    renderTimeline();
     setStatus("Text captured!", "success");
   });
 }
 
 function setStatus(msg, type) {
   statusEl.textContent = msg; 
-  statusEl.style.color = type === 'error' ? '#cf222e' : '#57ab5a';
-  if (msg) setTimeout(() => { statusEl.textContent = ''; }, 3000);
+  statusEl.className = `status ${type}`;
+  if (msg) setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'status'; }, 3000);
 }
 
 // =========================================
